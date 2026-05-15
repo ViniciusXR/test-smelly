@@ -1,80 +1,120 @@
-const { UserService } = require ('../src/userService');
+const { UserService } = require('../src/userService');
 
-const dadosUsuarioPadrao = {
+const DADOS_USUARIO_PADRAO = {
   nome: 'Fulano de Tal',
   email: 'fulano@teste.com',
   idade: 25,
 };
 
-describe('UserService - Suíte de Testes com Smells', () => {
+describe('UserService', () => {
   let userService;
 
-  // O setup é executado antes de cada teste
+  // O setup é executado antes de cada teste, garantindo o isolamento
   beforeEach(() => {
     userService = new UserService();
-    userService._clearDB(); // Limpa o "banco" para cada teste
+    userService._clearDB();
   });
 
-  test('deve criar e buscar um usuário corretamente', () => {
-    // Act 1: Criar
-    const usuarioCriado = userService.createUser(
-      dadosUsuarioPadrao.nome,
-      dadosUsuarioPadrao.email,
-      dadosUsuarioPadrao.idade
-    );
-    expect(usuarioCriado.id).toBeDefined();
+  // ---------------------------------------------------------------------------
+  // Criação e Busca (Eager Test separado em responsabilidades únicas)
+  // ---------------------------------------------------------------------------
+  
+  test('deve criar um usuário e atribuir um ID', () => {
+    // Arrange
+    const { nome, email, idade } = DADOS_USUARIO_PADRAO;
 
-    // Act 2: Buscar
+    // Act
+    const usuarioCriado = userService.createUser(nome, email, idade);
+
+    // Assert
+    expect(usuarioCriado.id).toBeDefined();
+  });
+
+  test('deve retornar os dados corretos ao buscar um usuário existente pelo ID', () => {
+    // Arrange
+    const { nome, email, idade } = DADOS_USUARIO_PADRAO;
+    const usuarioCriado = userService.createUser(nome, email, idade);
+
+    // Act
     const usuarioBuscado = userService.getUserById(usuarioCriado.id);
-    expect(usuarioBuscado.nome).toBe(dadosUsuarioPadrao.nome);
+
+    // Assert
+    expect(usuarioBuscado.nome).toBe(nome);
     expect(usuarioBuscado.status).toBe('ativo');
   });
 
-  test('deve desativar usuários se eles não forem administradores', () => {
+  // ---------------------------------------------------------------------------
+  // Desativação (Lógica condicional removida - um cenário por teste)
+  // ---------------------------------------------------------------------------
+
+  test('deve desativar um usuário comum com sucesso', () => {
+    // Arrange
     const usuarioComum = userService.createUser('Comum', 'comum@teste.com', 30);
-    const usuarioAdmin = userService.createUser('Admin', 'admin@teste.com', 40, true);
 
-    const todosOsUsuarios = [usuarioComum, usuarioAdmin];
+    // Act
+    const resultado = userService.deactivateUser(usuarioComum.id);
+    const usuarioAtualizado = userService.getUserById(usuarioComum.id);
 
-    // O teste tem um loop e um if, tornando-o complexo e menos claro.
-    for (const user of todosOsUsuarios) {
-      const resultado = userService.deactivateUser(user.id);
-      if (!user.isAdmin) {
-        // Este expect só roda para o usuário comum.
-        expect(resultado).toBe(true);
-        const usuarioAtualizado = userService.getUserById(user.id);
-        expect(usuarioAtualizado.status).toBe('inativo');
-      } else {
-        // E este só roda para o admin.
-        expect(resultado).toBe(false);
-      }
-    }
+    // Assert
+    expect(resultado).toBe(true);
+    expect(usuarioAtualizado.status).toBe('inativo');
   });
 
-  test('deve gerar um relatório de usuários formatado', () => {
-    const usuario1 = userService.createUser('Alice', 'alice@email.com', 28);
+  test('não deve permitir a desativação de um usuário administrador', () => {
+    // Arrange
+    const isAdmin = true;
+    const usuarioAdmin = userService.createUser('Admin', 'admin@teste.com', 40, isAdmin);
+
+    // Act
+    const resultado = userService.deactivateUser(usuarioAdmin.id);
+
+    // Assert
+    expect(resultado).toBe(false);
+  });
+
+  // ---------------------------------------------------------------------------
+  // Relatórios (Testes menos frágeis - valida o dado, não o formato exato)
+  // ---------------------------------------------------------------------------
+
+  test('deve incluir as informações essenciais dos usuários no relatório gerado', () => {
+    // Arrange
+    userService.createUser('Alice', 'alice@email.com', 28);
     userService.createUser('Bob', 'bob@email.com', 32);
 
+    // Act
     const relatorio = userService.generateUserReport();
     
-    // Se a formatação mudar (ex: adicionar um espaço, mudar a ordem), o teste quebra.
-    const linhaEsperada = `ID: ${usuario1.id}, Nome: Alice, Status: ativo\n`;
-    expect(relatorio).toContain(linhaEsperada);
-    expect(relatorio.startsWith('--- Relatório de Usuários ---')).toBe(true);
-  });
-  
-  test('deve falhar ao criar usuário menor de idade', () => {
-    // Este teste não falha se a exceção NÃO for lançada.
-    // Ele só passa se o `catch` for executado. Se a lógica de validação
-    // for removida, o teste passa silenciosamente, escondendo um bug.
-    try {
-      userService.createUser('Menor', 'menor@email.com', 17);
-    } catch (e) {
-      expect(e.message).toBe('O usuário deve ser maior de idade.');
-    }
+    // Assert
+    expect(relatorio).toContain('Alice');
+    expect(relatorio).toContain('Bob');
+    expect(relatorio).toContain('ativo');
   });
 
-  test.skip('deve retornar uma lista vazia quando não há usuários', () => {
-    // TODO: Implementar este teste depois.
+  test('deve indicar no relatório quando não há usuários cadastrados', () => {
+    // Arrange
+    // O setup inicial (`beforeEach`) já garante o banco limpo e vazio.
+
+    // Act
+    const relatorio = userService.generateUserReport();
+
+    // Assert
+    expect(relatorio).toContain('Nenhum usuário cadastrado');
   });
+
+  // ---------------------------------------------------------------------------
+  // Validações (Tratamento idiomático de exceções para evitar falsos positivos)
+  // ---------------------------------------------------------------------------
+
+  test('deve lançar exceção ao tentar criar um usuário menor de idade', () => {
+    // Arrange
+    const nome = 'Menor';
+    const email = 'menor@email.com';
+    const idadeInvalida = 17;
+
+    // Act & Assert
+    expect(() => {
+      userService.createUser(nome, email, idadeInvalida);
+    }).toThrow('O usuário deve ser maior de idade.');
+  });
+
 });
